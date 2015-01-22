@@ -547,14 +547,13 @@ void tick_timer()
  */
 
 /** 
- * NF hook function, deals with data packets(non DHCP packets)
+ * NF hook function, deals with only data packets(non DHCP packets)
  */
 unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
 				const struct net_device *in, 
 				const struct net_device *out, 
 				int (*okfn) (struct sk_buff*))
 {
-    int ret = 0;
 	int ret1 = 0;
     char buf[512] = {'\0'};
     unsigned char src_mac[ETH_ALEN];
@@ -574,45 +573,34 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
     {
         return NF_ACCEPT;
     }
-
-	/* Check pkt is DHCP or not*/
-	ret = is_dhcp(skb);
-	if (ret == 1)
-	{
-		/* *
-         * FIXME:
-		 * TODO: Here the DHCP packet is being relayed and the dhcp_process_packet
-		 * will not work because... 
-		 * In this case client MAC address will be destination MAC.
-		 * i.e our box is working in L2 mode
-		 */
-        dhcp_process_packet(skb);
+    /* There may be chance of DHCP packet, we should not drop the dhcp packet */
+    ret1 = is_dhcp(skb);
+    if(ret1 == 1)
+    {
         return NF_ACCEPT;
-	}
-	else
+    }
+
+	ret1 = verify_packet(skb);
+	if (ret1 ==1)
 	{
-		ret1 = verify_packet(skb);
-		if (ret1 ==1)
-		{
-			D("IP-MAC relation is correct");
-			return NF_ACCEPT;
-		}
-		else
-		{
-			D("IP spoof packet found");
-			/*FIXME:*/
-			/* Debug: print protocol number and src IP*/
-            eh = eth_hdr(skb);
-            memcpy(src_mac, eh->h_source, ETH_ALEN);
-            ip_header = ip_hdr(skb);
-            saddr.s_addr = ip_header->saddr; /* do we need to used ntohl()*/
-            D("spoof packet Info:");
-            D("IP protocol:%d\t", ip_header->protocol);
-            D("SRC MAC:%02X:%02X:%02X:%02X:%02X:%02X\t", src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
-            D("SRC IP:%s", inet_ntoa(saddr, buf, NULL));
-			return NF_DROP;
-		}
+		D("IP-MAC relation is correct \n");
+		return NF_ACCEPT;
 	}
+    else
+    {
+        D("IP spoof packet found");
+        /*FIXME:*/
+        /* Debug: print protocol number and src IP*/
+        eh = eth_hdr(skb);
+        memcpy(src_mac, eh->h_source, ETH_ALEN);
+        ip_header = ip_hdr(skb);
+        saddr.s_addr = ip_header->saddr; /* do we need to used ntohl()*/
+        D("spoof packet Info:");
+        D("IP protocol:%d\t", ip_header->protocol);
+        D("SRC MAC:%02X:%02X:%02X:%02X:%02X:%02X\t", src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
+        D("SRC IP:%s \n", inet_ntoa(saddr, buf, NULL));
+        return NF_DROP;
+    }
 
 	return NF_ACCEPT;
 }
