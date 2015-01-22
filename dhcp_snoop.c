@@ -403,12 +403,18 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
         const struct net_device *out, int (*okfn) (struct sk_buff *))
 {
     int ret = 0;
+    struct iphdr *ip_header;
 
     if(skb->protocol != htons(ETH_P_IP))/*Jagadeesh: If not Internet Protocol Packet Just dont touch*/ 
     {
     	return NF_ACCEPT;
     }
-    /*TODO: If IPv6 Packet, Just dont touch packet */
+    /* If packet is IPv6, then just Accept the packet  */
+    ip_header = ip_hdr(skb);
+    if(ip_header->version != IPV4)
+    {
+        return NF_ACCEPT;
+    }
 
     ret = is_dhcp(skb);
     if(ret ==1)
@@ -417,8 +423,6 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     }else 
     	return NF_ACCEPT;
     
-
-	/* If packet is not dhcp pcaket, then check MAC-IP combination that we already have*/
     return NF_ACCEPT;
 }
 
@@ -595,7 +599,6 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
         memcpy(src_mac, eh->h_source, ETH_ALEN);
         ip_header = ip_hdr(skb);
         saddr.s_addr = ip_header->saddr; /* do we need to used ntohl()*/
-        D("spoof packet Info:");
         D("IP protocol:%d\t", ip_header->protocol);
         D("SRC MAC:%02X:%02X:%02X:%02X:%02X:%02X\t", src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5]);
         D("SRC IP:%s \n", inet_ntoa(saddr, buf, NULL));
