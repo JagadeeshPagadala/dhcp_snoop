@@ -37,6 +37,28 @@ MODULE_AUTHOR("Ajeet Vijayvergiya");
 MODULE_AUTHOR("Jagadeesh Pagadala");
 MODULE_DESCRIPTION("DHCP snoop and IP spoof");
 
+/* following is the DHCP packet format*/
+typedef struct {
+    u_int8_t  op;       /* 0: Message opcode/type */
+    u_int8_t  htype;    /* 1: Hardware addr type (net/if_types.h) */
+    u_int8_t  hlen;     /* 2: Hardware addr length */
+    u_int8_t  hops;     /* 3: Number of relay agent hops from client */
+    u_int32_t xid;      /* 4: Transaction ID */
+    u_int16_t secs;     /* 8: Seconds since client started looking */
+    u_int16_t flags;    /* 10: Flag bits */
+    struct in_addr ciaddr;  /* 12: Client IP address (if already in use) */
+    struct in_addr yiaddr;  /* 16: Client IP address */
+    struct in_addr siaddr;  /* 18: IP address of next server to talk to */
+    struct in_addr giaddr;  /* 20: DHCP relay agent IP address */
+    unsigned char chaddr [16];  /* 24: Client hardware address */
+    char sname [64];    /* 40: Server name */
+    char file [128];  /* 104: Boot filename */
+    unsigned char options [16];
+                /* 212: Optional parameters
+ *                    (actual length dependent on MTU). */
+}dhcp_packet;
+
+
 char* inet_ntoa(struct in_addr in, char* buf, size_t* rlen);
 int dump_list(char *);
 void tick_timer(void);
@@ -255,8 +277,11 @@ uint32_t dhcp_ip_address(struct sk_buff *skb)
     return *((uint32_t *)buff);
 }
 
-/*
+/**
  * This function will add to DHCP table, or update an existing entry 
+ * TODO: Handle two cases. 
+ * 1. DHCP server (Handled already)
+ * 2. DHCP relay agent (need to be implemented)
  */
 void dhcp_process_packet(struct sk_buff *skb)
 {
@@ -394,8 +419,10 @@ int is_dhcp(struct sk_buff *skb)
     return 0;
 }
 
-/*
+/**
  * NF HOOK call back fn. will process only DHCP packets
+ * 1. DHCP server case
+ * 2. DHCP relay agent case
  */
 unsigned int dhcp_hook_function(unsigned int hooknum,
         struct sk_buff *skb,
@@ -405,7 +432,7 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     int ret = 0;
     struct iphdr *ip_header;
 
-    if(skb->protocol != htons(ETH_P_IP))/*Jagadeesh: If not Internet Protocol Packet Just dont touch*/ 
+    if(skb->protocol != htons(ETH_P_IP))/*Jagadeesh: If not Internet Protocol Packet Just dont touch*/
     {
     	return NF_ACCEPT;
     }
@@ -415,12 +442,13 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     {
         return NF_ACCEPT;
     }
-
+    /*TODO: Check both cases are handled ? i.e DHCP server and DHCP relay agent*/
     ret = is_dhcp(skb);
     if(ret ==1)
     {
+        /*TODO: Check GIADDR to verify packet is being relayed or not*/
     	dhcp_process_packet(skb);
-    }else 
+    }else
     	return NF_ACCEPT;
     
     return NF_ACCEPT;
@@ -480,7 +508,6 @@ static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, 
 
     //printk(" read mac address %x, %x, %x, %x, %x, %x",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     //printk(" buf content %s:", buf);
-
 
     tmp = kmalloc(sizeof(struct router_mac), GFP_KERNEL);
     if(!tmp)
