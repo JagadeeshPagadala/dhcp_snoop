@@ -461,10 +461,11 @@ static ssize_t routers_show(struct kobject *kobj, struct kobj_attribute *attr, c
 static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     /* Read the allowed MAC addresses of routers and maintain them to check against packets MAC IP relation*/
-    /* TODO: which format you are expecting ??? ab:cd:ef:gh:ij:kl
-     *  Handle upper as well as lower case inputs
+    /** TODO: which format you are expecting ??? ab:cd:ef:gh:ij:kl
+     *  1. Handle repeated MAC entries 
+     *  2. Handle upper as well as lower case inputs
      *
-     * */
+     */
 
     struct router_mac *tmp;
     u8 mac[ETH_ALEN] = {0};
