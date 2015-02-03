@@ -433,6 +433,10 @@ int is_dhcp(struct sk_buff *skb)
  * NF HOOK call back fn. will process only DHCP packets
  * 1. DHCP server case
  * 2. DHCP relay agent case
+ *
+ * TODO: First thing to be done is check packet is RXD on trusted interface or untrusted interface.
+ *          If packet is coming on unterusted interface, Allow only DHCP packets untill IP-MAC relation is found 
+ *          If packet is coming on trusted interface, do not apply DHCP snoop and IP source guard.
  */
 unsigned int dhcp_hook_function(unsigned int hooknum,
         struct sk_buff *skb,
@@ -681,6 +685,7 @@ static int __init mod_init_func (void)
     int retval;
     struct net_device *dev;
     int num_devices = 0;
+    int i = 0;
 
     /*TODO: get all available network interfaces  */
     dev = first_net_device(&init_net);
