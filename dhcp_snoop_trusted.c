@@ -83,12 +83,20 @@ struct dhcp_struct
     /* For hash table*/
     struct hlist_node dhcp_hash_list;
 };
-
+/******************* TODO: this needs to be deleted *******************/
 struct router_mac 
 {
     unsigned char mac[ETH_ALEN];
     struct router_mac *next;
 };
+
+struct interface_list
+{
+    unsigned char name[IFNAMSIZ];
+    struct interface_list *next;
+};
+
+struct interface_list *trusted_if_head = NULL;
 
 struct router_mac *head = NULL;
 /* Allowed routers MAC address linked list related operations*/
@@ -541,15 +549,72 @@ static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, 
 
     return count;
 }
+/*******************************************************************************/
+/*********** sysfs for trusted interfaces **************************************/
+static ssize_t trusted_interface_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+    struct interface_list *ptr = trusted_if_head;
+    int count = 0;
+    /* Just traverse through the list and display*/
+    if (ptr == NULL)
+    {
+        sprintf(buf, "No Trusted Interfaces");
+        return count;
+    }
+    while(ptr != NULL)
+    {
+        count+ = sprintf(buf+count, "%s", ptr->name);
+        ptr = ptr->next;
+    }
+    return count;
+}
+
+static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+    /* add to the trusted interfaces list*/
+    struct interface_list *ptr = trusted_if_head;
+    struct interface_list *tmp;
+
+    /*  check if interface is already present in the trusted list*/
+    if (ptr == NULL)
+    {
+        tmp = kmalloc(sizeof(struct interface_list), GFP_KERNEL);
+        if(!tmp)
+        {
+            printk(KERN_DEBUG"%s: can't allocate memory", __func__);
+            return -ENOMEM;
+        }
+        /* TODO: How much size needs to be copied ? eth0 or eth0.10*/
+        memcpy();
+    }
+    else 
+    {
+       tmp = kmalloc(sizeof(struct interface_list), GFP_KERNEL);
+       if(!tmp)
+       {
+            printk(KERN_DEBUG"%s: can't allocate memory", __func__);
+            return -ENOMEM;
+       }
+       memcpy();
+       tmp->next = head; 
+       head = tmp;
+    }
+
+    return count;
+}
 
 static struct kobj_attribute dhcp_attribute     =
                     __ATTR(dhcp_snoop, 0644, dhcp_show, dhcp_store);
 static struct kobj_attribute allowed_routers    = 
                     __ATTR(config_router, 0644, routers_show, routers_store);
 
+static struct kobj_attribute trusted_interfaces = 
+                    __ATTR(trusted_interfaces, 0644, trusted_interface_show, trusted_interface_store);
+
 static struct attribute * attrs [] = {
     &dhcp_attribute.attr,
     &allowed_routers.attr,
+    &trusted_interfaces,
     NULL,
 };
 /***********************************************************************/
@@ -686,10 +751,10 @@ static int __init mod_init_func (void)
     struct net_device *dev;
     int num_devices = 0;
     int i = 0;
-
+    /* TODO: have a list of trusted interfaces, to check incoming pkt interface name against */
     /*TODO: get all available network interfaces  */
     dev = first_net_device(&init_net);
-    while(dev){
+    while(dev) {
         printk(KERN_INFO"interface name %s \n",dev->name);
         num_devices++;
         dev = next_net_device(dev);
@@ -715,7 +780,7 @@ static int __init mod_init_func (void)
     }
 
     nf_register_hook(&dhcp_nfho);
-    /*nf_register_hook(&packet_nfho);
+    nf_register_hook(&packet_nfho);
 
     ex_kobj = kobject_create_and_add("dhcp", kernel_kobj);
     retval = sysfs_create_group(ex_kobj, &attr_group);
@@ -724,7 +789,7 @@ static int __init mod_init_func (void)
 
     init_timer_on_stack(&dhcp_timer);
     tick_timer();
-    */
+    
     return 0;
 }
 
