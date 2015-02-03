@@ -1,2 +1,15 @@
 
 Better form a DHCP packet struct and handle using that struct.
+
+After discussion with Raghu sir, IP source guard works only in L2 mode.
+No need to maintain allowed router list. Since we are performing IP source guarding at L2 mode.
+
+Mechanism:
+
+Initially all ports are Untrusted.
+Chnage Untrusted port state to trusted state... If port is connected to Router/Switch/DHCP server.
+No need to maintain DHCP snoop table for trusted ports.
+If packet is coming on trusted port, no need to check IP-MAC relation.
+If packet is coming on untrusted port, checp IP-MAC relation with DHCP snoop table.
+	If IP-MAC relation is correct..... allow the packet.
+	If IP-MAC relation is in correct... just drop thr packet.

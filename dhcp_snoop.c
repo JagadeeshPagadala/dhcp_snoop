@@ -283,7 +283,7 @@ uint32_t dhcp_ip_address(struct sk_buff *skb)
  * 1. DHCP server (Handled already)
  * 2. DHCP relay agent (need to be implemented)
  */
-void dhcp_process_packet(struct sk_buff *skb)
+void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
 {
     int type, i = 0 ;
     struct iphdr *iph=ip_hdr(skb);
@@ -310,17 +310,20 @@ void dhcp_process_packet(struct sk_buff *skb)
         //+Client IP+Your IP+Next server IP+Relay agent IP
         offset+=1+1+1+1+4+2+2+4+4+4+4;//reference to RFC2131
 
-        hw=buff+offset;
+        hw=buff+offset; /*hw is CHADDR*/
         //Client MAC address+Server host name+Boot file name+
         //Magic cookie+Option
         offset+=16+64+128+4+2;//reference to RFC2131 /*for +4+2 refer RFC2132*/
         type=*(buff+offset);
         if (type == 5) // DHCP ACK pkt type is 5
-        {  
+        {
+            /* Here both cases..... DHCP server and DHCP Relay agent cases are handled*/
             //Search in hash table 
             hash_for_each(dhcp_snoop_table, i, tmp, dhcp_hash_list)
             {
                 // compare stored MAC address with PACKET mac address
+                // dhcp_mac is previously assigned DHCP IP
+                // hw is CHADDR(client HW addr) field of present DHCP transaction
                 if(memcmp(tmp->dhcp_mac, hw, ETH_ALEN) == 0)
                 {
                     // If entry is found, replace the entry (or) update entry
@@ -331,7 +334,6 @@ void dhcp_process_packet(struct sk_buff *skb)
                     return;
                 }
             }
-            
             // entry is not found, so add to hash table 
             struct dhcp_struct *ptr = kmalloc(sizeof( struct dhcp_struct), GFP_KERNEL);
             if( ptr == NULL )
@@ -447,7 +449,10 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     if(ret ==1)
     {
         /*TODO: Check GIADDR to verify packet is being relayed or not*/
-    	dhcp_process_packet(skb);
+        if (is_dhcp_server ==1)
+        	dhcp_process_packet(skb, is_dhcp_server);
+        else
+            dhcp_process_packet(skb, is_dhcp_server);
     }else
     	return NF_ACCEPT;
     
@@ -658,7 +663,7 @@ static struct nf_hook_ops packet_nfho = {
 	.owner		= THIS_MODULE,
 	.hook		= data_hook_function,
 	.hooknum	= 0,	/*NF_IP_PRE_ROUTING,*/
-	.pf		= PF_BRIDGE,
+	.pf		    = PF_BRIDGE,
 	.priority	= NF_IP_PRI_FIRST,
 };
 
