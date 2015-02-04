@@ -436,7 +436,7 @@ int is_dhcp(struct sk_buff *skb)
 }
 
 /**
- * NF HOOK call back fn. will process only DHCP packets
+ * NF HOOK call back fn. will process only DHCP packets to snoop the DHCP transaction
  * 1. DHCP server case
  * 2. DHCP relay agent case
  *
@@ -457,12 +457,32 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     	return NF_ACCEPT;
     }
     printk(KERN_INFO"pkt on in:%s out:%s", in->name, out->name);
+
     /* If packet is IPv6, then just Accept the packet  */
     ip_header = ip_hdr(skb);
     if(ip_header->version != IPV4)
     {
         return NF_ACCEPT;
     }
+
+    /*TODO: Check packet is coming on trutsed interface ?*/
+    {
+        eh = eth_hdr(skb);
+        if(trusted_if_head != NULL) /* there are trusted interfaces configured.*/
+        {
+            while(ptr != NULL)
+            {
+                if(memcmp(eh->h_source, ptr->name, ptr->name_len) == 0)
+                {
+                    /* found in trusted list*/
+                    return NF_ACCEPT;
+                    /*TODO:*/
+                }
+            }
+        }
+    }
+    
+    
     /*TODO: Check both cases are handled ? i.e DHCP server and DHCP relay agent*/
     ret = is_dhcp(skb);
     if(ret ==1)
@@ -711,6 +731,11 @@ void tick_timer()
  *	3. If Match do nothing.
  *	4. If not matched do print some diagnostic message.
  */
+/**
+ * TODO: added 4-2-215
+ * If packet is coming on trusted interface, do not verify packet
+ * If packet is coming on untrusted interface verify packet.
+ */
 
 /** 
  * NF hook function, deals with only data packets(non DHCP packets)
@@ -726,6 +751,8 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
 	struct iphdr *ip_header;
     struct ethhdr *eh;
     struct in_addr saddr;
+    struct trusted_interface_list *ptr = trusted_if_head;
+
 
 	/* Check packet is Internet packet or not */
     if (skb->protocol != htons (ETH_P_IP))
@@ -740,10 +767,30 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
         return NF_ACCEPT;
     }
     /* There may be chance of DHCP packet, we should not drop the dhcp packet */
+    /*TODO: Check cisco doc ....when to accept DHCP packets....
+     * i.e, what if DHCP ACK is coming on untrused port
+     * */
     ret1 = is_dhcp(skb);
     if(ret1 == 1)
     {
         return NF_ACCEPT;
+    }
+    
+    /*TODO: Check packet is coming on trutsed interface ?*/
+    {
+        eh = eth_hdr(skb);
+        if(trusted_if_head != NULL) /* there are trusted interfaces configured.*/
+        {
+            while(ptr != NULL)
+            {
+                if(memcmp(eh->h_source, ptr->name, ptr->name_len) == 0)
+                {
+                    /* found in trusted list*/
+                    return NF_ACCEPT;
+                    /*TODO:*/
+                }
+            }
+        }
     }
 
 	ret1 = verify_packet(skb);
