@@ -39,10 +39,6 @@ MODULE_AUTHOR("Jagadeesh Pagadala");
 MODULE_DESCRIPTION("DHCP snoop and IP spoof");
 
 /**************************************/
-struct interface{
-    char name[IFNAMSIZ];
-    u_int8_t is_trusted;
-};
 
 struct interface *interface; 
 /* following is the DHCP packet format*/
@@ -90,13 +86,15 @@ struct router_mac
     struct router_mac *next;
 };
 
-struct interface_list
+/* This structure maintains list of trusted interfaces*/
+struct trusted_interface_list
 {
     unsigned char name[IFNAMSIZ];
+    int name_len;
     struct interface_list *next;
 };
 
-struct interface_list *trusted_if_head = NULL;
+struct trusted_interface_list *trusted_if_head = NULL;
 
 struct router_mac *head = NULL;
 /* Allowed routers MAC address linked list related operations*/
@@ -553,51 +551,104 @@ static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, 
 /*********** sysfs for trusted interfaces **************************************/
 static ssize_t trusted_interface_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-    struct interface_list *ptr = trusted_if_head;
+    struct trusted_interface_list *ptr = trusted_if_head;
     int count = 0;
     /* Just traverse through the list and display*/
-    if (ptr == NULL)
+    if (trusted_if_head == NULL)
     {
         sprintf(buf, "No Trusted Interfaces");
         return count;
     }
     while(ptr != NULL)
     {
-        count+ = sprintf(buf+count, "%s", ptr->name);
+        count+=sprintf(buf+count, "%s \t", ptr->name);
         ptr = ptr->next;
     }
     return count;
 }
 
-static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+static struct net_device *if_to_netdev(const char *buffer)
+{
+	char *cp;
+	char ifname[IFNAMSIZ + 2];
+
+	if (buffer) {
+		strlcpy(ifname, buffer, IFNAMSIZ);
+		cp = ifname + strlen(ifname);
+		while (--cp >= ifname && *cp == '\n')
+			*cp = '\0';
+		return dev_get_by_name(&init_net, ifname);
+	}
+	return NULL;
+}
+
+/* Store method is handled correctly*/
+static ssize_t trusted_interface_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     /* add to the trusted interfaces list*/
-    struct interface_list *ptr = trusted_if_head;
-    struct interface_list *tmp;
+    struct trusted_interface_list *ptr = trusted_if_head;
+    struct trusted_interface_list *tmp;
+    char ifname[IFNAMSIZ] = {'\0'};
+    struct net_device *dev;
+    int num_devices=0;
 
-    /*  check if interface is already present in the trusted list*/
-    if (ptr == NULL)
+    printk(KERN_INFO"inside trusted_interface_store");
+    /* Sanity check of interface*/
+    dev = if_to_netdev(buf);
+    if(!dev)
     {
-        tmp = kmalloc(sizeof(struct interface_list), GFP_KERNEL);
+        printk(KERN_DEBUG"\n Invalid argument\n");
+        return -EINVAL;
+    }
+    printk(KERN_DEBUG"\n device found %s, length:%d\n",dev->name,strlen(dev->name));
+
+    
+    printk(KERN_DEBUG"\nbuf:%s interface:%s \n", buf, ifname);
+    //dev = dev_get_by_name(&init_net, ifname);
+    printk(KERN_DEBUG"\n device found %s\n",dev->name);
+
+    /*TODO: If same interface is entered two or more times? solve this by checking existing name in list*/
+    if (trusted_if_head == NULL)
+    {
+        tmp = kmalloc(sizeof(struct trusted_interface_list), GFP_KERNEL);
         if(!tmp)
         {
             printk(KERN_DEBUG"%s: can't allocate memory", __func__);
             return -ENOMEM;
         }
-        /* TODO: How much size needs to be copied ? eth0 or eth0.10*/
-        memcpy();
+        /* How much need to copy: solved.... */
+        memcpy(tmp->name, dev->name, IFNAMSIZ);
+        tmp->name_len = strlen(dev->name);
+        tmp->next = NULL;
+        trusted_if_head = tmp;
+        return count;
     }
     else 
     {
-       tmp = kmalloc(sizeof(struct interface_list), GFP_KERNEL);
+        /*check if the interface is already in trusted ports list*/
+
+        while(ptr != NULL)
+        {
+            if(memcmp(dev->name, ptr->name, ptr->name_len) == 0)
+            {
+                printk(KERN_DEBUG"entry already exists");
+                return count;
+            }
+            ptr = ptr->next;
+        }
+
+       tmp = kmalloc(sizeof(struct trusted_interface_list), GFP_KERNEL);
        if(!tmp)
        {
             printk(KERN_DEBUG"%s: can't allocate memory", __func__);
             return -ENOMEM;
        }
-       memcpy();
-       tmp->next = head; 
-       head = tmp;
+        /* How much need to copy: solved ....*/
+        memcpy(tmp->name, dev->name, IFNAMSIZ);
+        tmp->name_len = strlen(dev->name);
+        /* Add new element at head*/
+        tmp->next = trusted_if_head;
+        trusted_if_head = tmp;
     }
 
     return count;
@@ -760,27 +811,9 @@ static int __init mod_init_func (void)
         dev = next_net_device(dev);
     }
     printk(KERN_INFO"there are %d interfaces on the machine",num_devices);
-    interface = kmalloc(sizeof(struct interface)*num_devices, GFP_KERNEL);
-    if(!interface) {
-        printk(KERN_DEBUG"%s: Can't allocate memory for interfaces \n", __func__);
-        return -ENOMEM;
-    }
 
-    dev = first_net_device(&init_net);
-    while(dev) {
-        printk(KERN_INFO"interface name %s \n",dev->name);
-        //num_devices++;
-        memcpy(interface[0].name, dev->name, IFNAMSIZ);
-        dev = next_net_device(dev);
-    }
-    /* Initially all the interfaces are Untrusted */
-    for(i = 0; i<num_devices; i++)
-    {
-        interface[i].is_trusted = 0;
-    }
-
-    nf_register_hook(&dhcp_nfho);
-    nf_register_hook(&packet_nfho);
+    //nf_register_hook(&dhcp_nfho);
+    //nf_register_hook(&packet_nfho);
 
     ex_kobj = kobject_create_and_add("dhcp", kernel_kobj);
     retval = sysfs_create_group(ex_kobj, &attr_group);
@@ -795,10 +828,10 @@ static int __init mod_init_func (void)
 
 static void __exit mod_exit_func (void)
 {
-    //(kobject_put(ex_kobj);
-    //del_timer(&dhcp_timer);
+    kobject_put(ex_kobj);
+    del_timer(&dhcp_timer);
 
-    nf_unregister_hook(&dhcp_nfho);
+    //nf_unregister_hook(&dhcp_nfho);
     //nf_unregister_hook(&packet_nfho);
     //TODO: clean the Hash table
     //TODO: clean the memory associated with allowed router linked list
