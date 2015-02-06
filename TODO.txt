@@ -1,4 +1,3 @@
-
 Better form a DHCP packet struct and handle using that struct.
 
 After discussion with Raghu sir, IP source guard works only in L2 mode.

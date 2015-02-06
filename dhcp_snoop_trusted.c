@@ -40,7 +40,6 @@ MODULE_DESCRIPTION("DHCP snoop and IP spoof");
 
 /**************************************/
 
-struct interface *interface; 
 /* following is the DHCP packet format*/
 typedef struct {
     u_int8_t  op;       /* 0: Message opcode/type */
@@ -80,11 +79,12 @@ struct dhcp_struct
     struct hlist_node dhcp_hash_list;
 };
 /******************* TODO: this needs to be deleted *******************/
-struct router_mac 
+/*struct router_mac 
 {
     unsigned char mac[ETH_ALEN];
     struct router_mac *next;
 };
+*/
 
 /* This structure maintains list of trusted interfaces*/
 struct trusted_interface_list
@@ -95,11 +95,12 @@ struct trusted_interface_list
 };
 
 struct trusted_interface_list *trusted_if_head = NULL;
-
-struct router_mac *head = NULL;
+/********************* TODO: this needs to be deleted *****************/
+//struct router_mac *head = NULL;
 /* Allowed routers MAC address linked list related operations*/
 
-void add_router(struct router_mac *ptr)
+/********************* TODO: this needs to be deleted ****************/
+/*void add_router(struct router_mac *ptr)
 {
 
     //printk("\n read mac address %x, %x, %x, %x, %x, %x",ptr->mac[0], ptr->mac[1], ptr->mac[2], ptr->mac[3], ptr->mac[4], ptr->mac[5]);
@@ -111,13 +112,14 @@ void add_router(struct router_mac *ptr)
     }
     else 
     {
-        /* add element at start for reducing adding complexity*/
+        // add element at start for reducing adding complexity
         ptr->next = head; 
         head = ptr;
         return;
     }
 }
-
+*/
+/*
 void clean_allowed_routers(void)
 {
     struct router_mac *ptr;
@@ -134,6 +136,24 @@ void clean_allowed_routers(void)
         kfree(tmp);
     }
     head = NULL;
+}
+*/
+void clean_trusted_intrerfaces(void)
+{
+    struct trusted_interface_list *ptr;
+    struct trusted_interface_list *tmp;
+
+    if(trusted_if_head == NULL)
+        return NULL;
+
+    ptr = trusted_if_head;
+    while(ptr->next != NULL)
+    {
+        tmp = ptr; 
+        ptr = ptr->next;
+        kfree(tmp);
+    }
+    trusted_if_head = NULL; 
 }
 
 /*Hash table declarartion and definition*/
@@ -525,6 +545,7 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
 {
     return count;
 }
+/*****************************TODO: this needs to be deleted ***********************/
 /* allowed routers configuration */
 static ssize_t routers_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
@@ -547,6 +568,7 @@ static ssize_t routers_show(struct kobject *kobj, struct kobj_attribute *attr, c
     return count;
 }
 
+/******************TODO: this needs to be deleted *******************/
 static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
     /* Read the allowed MAC addresses of routers and maintain them to check against packets MAC IP relation*/
@@ -901,9 +923,7 @@ static void __exit mod_exit_func (void)
     nf_unregister_hook(&dhcp_nfho);
     nf_unregister_hook(&packet_nfho);
     //TODO: clean the Hash table
-    //TODO: clean the memory associated with allowed router linked list
-    //clean_allowed_routers();
-    
+    //TODO: clean memory associated with trusted interfaces 
 }
 
 module_init (mod_init_func);
