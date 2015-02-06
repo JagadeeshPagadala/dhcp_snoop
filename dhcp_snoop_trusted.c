@@ -76,6 +76,10 @@ struct dhcp_struct
     unsigned int lease_time;
     /* For hash table*/
     struct hlist_node dhcp_hash_list;
+    /*TODO: 
+     * 1. add type variable..... to maintain static Binding or DHCP snoop binding
+     * 2. delete traffic mac..... because no need to maintain router MAC.
+     * */
 };
 
 /* This structure maintains list of trusted interfaces*/
@@ -94,7 +98,7 @@ void clean_trusted_intrerfaces(void)
     struct trusted_interface_list *tmp;
 
     if(trusted_if_head == NULL)
-        return NULL;
+        return;
 
     ptr = trusted_if_head;
     while(ptr->next != NULL)
@@ -306,7 +310,7 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
             hash_for_each(dhcp_snoop_table, i, tmp, dhcp_hash_list)
             {
                 // compare stored MAC address with PACKET mac address
-                // dhcp_mac is previously assigned DHCP IP
+                // dhcp_mac is client MAC that is snooped from previous DHCP transaction 
                 // hw is CHADDR(client HW addr) field of present DHCP transaction
                 if(memcmp(tmp->dhcp_mac, hw, ETH_ALEN) == 0)
                 {
@@ -314,7 +318,7 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
                     tmp->ip = dhcp_ip_address(skb);
                     memcpy(tmp->traffic_mac, mh->h_dest, ETH_ALEN);
                     tmp->lease_time = dhcp_lease_time(skb);
-                    //printk("\n found an entry \n");
+                    //printk(KERN_DEBUG"%s:DHCP spoof entry already present... Updating with new values \n", __func__);
                     return;
                 }
             }
@@ -497,7 +501,7 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
 }
 
 /*******************************************************************************/
-/*********** sysfs for trusted interfaces **************************************/
+/*********** sysfs for trusted interfaces ********************************/
 static ssize_t trusted_interface_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
     struct trusted_interface_list *ptr = trusted_if_head;
@@ -539,7 +543,6 @@ static ssize_t trusted_interface_store(struct kobject *kobj, struct kobj_attribu
     struct trusted_interface_list *tmp;
     char ifname[IFNAMSIZ] = {'\0'};
     struct net_device *dev;
-    int num_devices=0;
 
     printk(KERN_INFO"inside trusted_interface_store");
     /* Sanity check of interface*/
@@ -740,6 +743,48 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
 	return NF_ACCEPT;
 }
 
+/**
+ * NF hook function, which deals with incoming DHCP ACK packets... 
+ * i.e in case of Box is connected to DHCP server.
+ * If packet is DHCP ACK... 
+ *  Then add the IP-MAC relation to DHCP snoop table
+ *
+ */
+unsigned int dhcp_incoming_function(unsigned int hooknum, struct sk_buff *skb,
+				const struct net_device *in, 
+				const struct net_device *out, 
+				int (*okfn) (struct sk_buff*))
+{
+
+    int ret = 0;
+    struct iphdr *ip_header;
+
+
+    printk(KERN_DEBUG"%s: packet is RXD on interface %s \n", __func__, in->name);
+
+	/* Check packet is Internet packet or not */
+    if (skb->protocol != htons (ETH_P_IP))
+	{
+		return NF_ACCEPT;
+	}
+    
+    /* If packet is IPv6, then just Accept the packet  */
+    ip_header = ip_hdr(skb);
+    if(ip_header->version != IPV4)
+    {
+        return NF_ACCEPT;
+    }
+
+    ret = is_dhcp(skb);
+    if(ret == 1)
+    {
+        dhcp_process_packet(skb, is_dhcp_server);
+        return NF_ACCEPT;
+    }
+
+    return NF_ACCEPT;
+}
+
 /* *
  * the DHCP snooping hook position depends on box configuration,
  * i.e BOX is DHCP server or DHCP Relay agent
@@ -751,7 +796,7 @@ static struct nf_hook_ops dhcp_nfho = {
     .hook       = dhcp_hook_function,
     /* Add some mechanism to choose hooknum, may be module parameter */
     .hooknum    = 3, /* 3 (LOCAL_OUT) or 0 (PRE_ROUTING)PF_BRIDGE*/
-    .pf         = PF_BRIDGE,
+    .pf         = PF_BRIDGE, // on bridge interface
     .priority   = NF_IP_PRI_FIRST,
 };
 
@@ -762,8 +807,18 @@ static struct nf_hook_ops packet_nfho = {
 	.owner		= THIS_MODULE,
 	.hook		= data_hook_function,
 	.hooknum	= 0,	/*NF_IP_PRE_ROUTING,*/
-	.pf		    = PF_BRIDGE,
+	.pf		    = PF_BRIDGE, // on bridge interface
 	.priority	= NF_IP_PRI_FIRST,
+};
+
+/* This hook is to listen on non brige interface, 
+ * i.e to capture incoming DHCP ack packets from DHCP server */
+static struct nf_hook_ops dhcp_incoming_nfho = {
+    .owner      = THIS_MODULE,
+    .hook       = dhcp_incoming_function,
+    .hooknum    = 0, // NF_IP_PRE_ROUTING
+    .pf         = PF_INET,
+    .priority   = NF_IP_PRI_FIRST,
 };
 
 static int __init mod_init_func (void)
@@ -771,7 +826,7 @@ static int __init mod_init_func (void)
     int retval;
     struct net_device *dev;
     int num_devices = 0;
-    int i = 0;
+
     /* TODO: have a list of trusted interfaces, to check incoming pkt interface name against */
     /*TODO: get all available network interfaces  */
     dev = first_net_device(&init_net);
@@ -784,6 +839,9 @@ static int __init mod_init_func (void)
 
     nf_register_hook(&dhcp_nfho);
     nf_register_hook(&packet_nfho);
+
+    /***** If dhcp server is not on the box*******/
+    nf_register_hook(&dhcp_incoming_nfho);
 
     ex_kobj = kobject_create_and_add("dhcp", kernel_kobj);
     retval = sysfs_create_group(ex_kobj, &attr_group);
