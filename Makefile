@@ -2,7 +2,7 @@
 
 obj-m:= dhcp_snoop_trusted.o
 #KDIR:=/lib/modules/$(shell uname -r)/build
-KDIR:=/home/jagadeesh/git
+KDIR:=/home/jagadeesh/git/git
 PWD:=$(shell pwd)
 ccflags-y:= -Wno-declaration-after-statement -Wno-unused-value
 
