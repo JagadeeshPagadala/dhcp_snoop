@@ -74,7 +74,7 @@ struct dhcp_struct
 {
     uint32_t ip;
     unsigned char dhcp_mac[6]; /*Client MAC*/
-    unsigned char traffic_mac[6]; /* DHCP relay agent MAC*/
+    unsigned char traffic_mac[6]; /* DHCP relay agent MAC*/ /*TODO: this is not required,, since DHCP snooping/ IP spoofing can be handled on L2 devices*/
     unsigned int lease_time;
     /* For hash table*/
     struct hlist_node dhcp_hash_list;
@@ -91,7 +91,7 @@ struct trusted_interface_list
 {
     unsigned char name[IFNAMSIZ];
     int name_len;
-    struct interface_list *next;
+    struct trusted_interface_list *next;
 };
 
 struct trusted_interface_list *trusted_if_head = NULL;
@@ -443,6 +443,19 @@ int is_dhcp(struct sk_buff *skb)
  * TODO: First thing to be done is check packet is RXD on trusted interface or untrusted interface.
  *          If packet is coming on unterusted interface, Allow only DHCP packets untill IP-MAC relation is found 
  *          If packet is coming on trusted interface, do not apply DHCP snoop and IP source guard.
+ * Steps to be folloewed: 
+ *          Check packet is DHCP ack or not.... 
+ *          If not a DHCP ack packet, then just allow the packet
+ *          If DHCP ack packet
+ *              Check if pkt is coming on untrusted interface.... Drop the packet
+ *              Check if pkt is coming on trusted interface(DHCP server is connected)...add to DHCP snooping table
+ */
+/*
+ *
+ * First Handle the DHCP server case
+ * 1. Check pkt is DHCP ACK
+ *      If yes just add to DHCP snooping table 
+ *      If not Just accept.
  */
 unsigned int dhcp_hook_function(unsigned int hooknum,
         struct sk_buff *skb,
@@ -456,7 +469,7 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
     {
     	return NF_ACCEPT;
     }
-    printk(KERN_INFO"pkt on in:%s out:%s", in->name, out->name);
+    //printk(KERN_INFO"pkt on in:%s out:%s", in->name, out->name);
 
     /* If packet is IPv6, then just Accept the packet  */
     ip_header = ip_hdr(skb);
@@ -465,23 +478,27 @@ unsigned int dhcp_hook_function(unsigned int hooknum,
         return NF_ACCEPT;
     }
 
-    /*TODO: Check packet is coming on trutsed interface ?*/
+    /*//TODO: Check packet is coming on trutsed interface ?
     {
         eh = eth_hdr(skb);
-        if(trusted_if_head != NULL) /* there are trusted interfaces configured.*/
+        if(trusted_if_head != NULL) // there are trusted interfaces configured.
         {
             while(ptr != NULL)
             {
                 if(memcmp(eh->h_source, ptr->name, ptr->name_len) == 0)
                 {
-                    /* found in trusted list*/
+                    // found in trusted list
+                    printk(KERN_DEBUG"%s:pkt rxd on trusted interface %s", __func__, ptr->name);
                     return NF_ACCEPT;
-                    /*TODO:*/
                 }
             }
         }
-    }
-    
+    }*/
+   
+   /**If I reach here means, DHCP packet is received on untrusted interface
+    *Add the IP-MAC relation to DHCP snoop table.
+    * 
+    */
     
     /*TODO: Check both cases are handled ? i.e DHCP server and DHCP relay agent*/
     ret = is_dhcp(skb);
@@ -685,7 +702,7 @@ static struct kobj_attribute trusted_interfaces =
 static struct attribute * attrs [] = {
     &dhcp_attribute.attr,
     &allowed_routers.attr,
-    &trusted_interfaces,
+    &trusted_interfaces.attr,
     NULL,
 };
 /***********************************************************************/
@@ -775,24 +792,27 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
     {
         return NF_ACCEPT;
     }
+    printk(KERN_DEBUG"%s: pkt rxd on interface %s",__func__,in->name);
     
     /*TODO: Check packet is coming on trutsed interface ?*/
+
+    eh = eth_hdr(skb);
+    if(trusted_if_head != NULL)//  there are trusted interfaces configured.
     {
-        eh = eth_hdr(skb);
-        if(trusted_if_head != NULL) /* there are trusted interfaces configured.*/
+        printk(KERN_DEBUG"%s:checking on interface %s \n", __func__, ptr->name);
+        while(ptr != NULL)
         {
-            while(ptr != NULL)
+            if(memcmp(in->name, ptr->name, ptr->name_len) == 0)
             {
-                if(memcmp(eh->h_source, ptr->name, ptr->name_len) == 0)
-                {
-                    /* found in trusted list*/
-                    return NF_ACCEPT;
-                    /*TODO:*/
-                }
+                /// found in trusted list
+                printk(KERN_DEBUG"%s:packet is RXD on trusted interface %s", __func__, eh->h_source);
+                return NF_ACCEPT;
             }
+            ptr = ptr->next;
         }
     }
-
+    
+    /* packet is not rxd on trusted interface so, verify packet*/
 	ret1 = verify_packet(skb);
 	if (ret1 ==1)
 	{
@@ -859,8 +879,8 @@ static int __init mod_init_func (void)
     }
     printk(KERN_INFO"there are %d interfaces on the machine",num_devices);
 
-    //nf_register_hook(&dhcp_nfho);
-    //nf_register_hook(&packet_nfho);
+    nf_register_hook(&dhcp_nfho);
+    nf_register_hook(&packet_nfho);
 
     ex_kobj = kobject_create_and_add("dhcp", kernel_kobj);
     retval = sysfs_create_group(ex_kobj, &attr_group);
@@ -878,8 +898,8 @@ static void __exit mod_exit_func (void)
     kobject_put(ex_kobj);
     del_timer(&dhcp_timer);
 
-    //nf_unregister_hook(&dhcp_nfho);
-    //nf_unregister_hook(&packet_nfho);
+    nf_unregister_hook(&dhcp_nfho);
+    nf_unregister_hook(&packet_nfho);
     //TODO: clean the Hash table
     //TODO: clean the memory associated with allowed router linked list
     //clean_allowed_routers();
