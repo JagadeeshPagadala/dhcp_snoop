@@ -38,7 +38,6 @@ MODULE_AUTHOR("Ajeet Vijayvergiya");
 MODULE_AUTHOR("Jagadeesh Pagadala");
 MODULE_DESCRIPTION("DHCP snoop and IP spoof");
 
-/**************************************/
 
 /* following is the DHCP packet format*/
 typedef struct {
@@ -78,13 +77,6 @@ struct dhcp_struct
     /* For hash table*/
     struct hlist_node dhcp_hash_list;
 };
-/******************* TODO: this needs to be deleted *******************/
-/*struct router_mac 
-{
-    unsigned char mac[ETH_ALEN];
-    struct router_mac *next;
-};
-*/
 
 /* This structure maintains list of trusted interfaces*/
 struct trusted_interface_list
@@ -95,49 +87,7 @@ struct trusted_interface_list
 };
 
 struct trusted_interface_list *trusted_if_head = NULL;
-/********************* TODO: this needs to be deleted *****************/
-//struct router_mac *head = NULL;
-/* Allowed routers MAC address linked list related operations*/
 
-/********************* TODO: this needs to be deleted ****************/
-/*void add_router(struct router_mac *ptr)
-{
-
-    //printk("\n read mac address %x, %x, %x, %x, %x, %x",ptr->mac[0], ptr->mac[1], ptr->mac[2], ptr->mac[3], ptr->mac[4], ptr->mac[5]);
-    
-    if(head == NULL)
-    {
-        head = ptr;        
-        return;
-    }
-    else 
-    {
-        // add element at start for reducing adding complexity
-        ptr->next = head; 
-        head = ptr;
-        return;
-    }
-}
-*/
-/*
-void clean_allowed_routers(void)
-{
-    struct router_mac *ptr;
-    struct router_mac *tmp;
-    
-    if(head == NULL)
-        return; 
-
-    ptr = head; 
-    while(ptr->next!=NULL)
-    {
-        tmp = ptr; 
-        ptr = ptr->next;
-        kfree(tmp);
-    }
-    head = NULL;
-}
-*/
 void clean_trusted_intrerfaces(void)
 {
     struct trusted_interface_list *ptr;
@@ -545,67 +495,7 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
 {
     return count;
 }
-/*****************************TODO: this needs to be deleted ***********************/
-/* allowed routers configuration */
-static ssize_t routers_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-    struct router_mac *ptr = head; 
-    int count = 0;
 
-    if (ptr == NULL)
-    {
-        return sprintf(buf, "router list empty");
-    }
-
-    {
-        /* iterate through router list and print*/
-        while (ptr != NULL)
-        {
-            count+=sprintf(buf+count,"%02x:%02x:%02x:%02x:%02x:%02x\n", ptr->mac[0], ptr->mac[1], ptr->mac[2], ptr->mac[3], ptr->mac[4], ptr->mac[5]);
-            ptr = ptr->next;
-        }
-    }
-    return count;
-}
-
-/******************TODO: this needs to be deleted *******************/
-static ssize_t routers_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
-{
-    /* Read the allowed MAC addresses of routers and maintain them to check against packets MAC IP relation*/
-    /** TODO: which format you are expecting ??? ab:cd:ef:gh:ij:kl
-     *  1. Handle repeated MAC entries 
-     *  2. Handle upper as well as lower case inputs
-     *
-     */
-
-    struct router_mac *tmp;
-    u8 mac[ETH_ALEN] = {0};
-    /*
-     * mac_pton() will handle case sensitivity. Returns the lower case representation of MAC,
-     */
-    if (!mac_pton(buf, mac))
-    {
-            printk("\n mac_pton failed \n");
-           return -EINVAL;
-    }
-
-    //printk(" read mac address %x, %x, %x, %x, %x, %x",mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    //printk(" buf content %s:", buf);
-
-    tmp = kmalloc(sizeof(struct router_mac), GFP_KERNEL);
-    if(!tmp)
-    {
-        printk("%s: can't allocate memory", __func__);
-        return -ENOMEM;
-    }
-
-    memcpy(tmp->mac, mac, ETH_ALEN);
-    tmp->next = NULL;
-    /* add this tmp to list */
-    add_router( tmp );
-
-    return count;
-}
 /*******************************************************************************/
 /*********** sysfs for trusted interfaces **************************************/
 static ssize_t trusted_interface_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
@@ -712,33 +602,24 @@ static ssize_t trusted_interface_store(struct kobject *kobj, struct kobj_attribu
 
     return count;
 }
-
+/**************** sysfs for dhcp snoop table *********************************/
 static struct kobj_attribute dhcp_attribute     =
                     __ATTR(dhcp_snoop, 0644, dhcp_show, dhcp_store);
-static struct kobj_attribute allowed_routers    = 
-                    __ATTR(config_router, 0644, routers_show, routers_store);
-
+/********************** sysfs for trusted interfaces *************************/
 static struct kobj_attribute trusted_interfaces = 
                     __ATTR(trusted_interfaces, 0644, trusted_interface_show, trusted_interface_store);
 
 static struct attribute * attrs [] = {
     &dhcp_attribute.attr,
-    &allowed_routers.attr,
     &trusted_interfaces.attr,
     NULL,
 };
-/***********************************************************************/
-/*       Allowed routers list       */
-
-
 
 static struct attribute_group attr_group = {
     .attrs = attrs,
 };
 
-
 static struct kobject *ex_kobj;
-
 
 static void dhcp_timer_func(unsigned long data)
 {
