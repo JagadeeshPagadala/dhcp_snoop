@@ -80,6 +80,7 @@ struct dhcp_struct
      * 1. add type variable..... to maintain static Binding or DHCP snoop binding
      * 2. delete traffic mac..... because no need to maintain router MAC.
      * */
+    uint8_t type; // DHCP snoop...1, Static.....0
 };
 
 /* This structure maintains list of trusted interfaces*/
@@ -497,6 +498,31 @@ static ssize_t dhcp_show(struct kobject * kobj, struct kobj_attribute * attr, ch
 
 static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, const char * buf, size_t count)
 {
+    /*TODO: add the MAC-IP as the static entry*/
+    /**
+     * Take input string and parse the string as comma as delimiter
+     */
+    ub mac[ETH_ALEN] = {0};
+    uint32_t ip;
+    uint32_t vlan;
+    char *p;
+    char buffer[1024];
+
+    memcpy(buffer, buf, count);
+    //parse MAC address
+    p = strsep(buffer,",");
+    if(!mac_pton(p, mac))
+    {
+        printk(KERN_DEBUG"%s: mac_pton failed", __func__);
+        return -EINVAL;
+    }
+    
+    //parse IP address
+    p = strsep(buffer)
+    //parse VLAN.... etc 
+
+    
+    
     return count;
 }
 
@@ -611,6 +637,7 @@ static struct kobj_attribute dhcp_attribute     =
 /********************** sysfs for trusted interfaces *************************/
 static struct kobj_attribute trusted_interfaces = 
                     __ATTR(trusted_interfaces, 0644, trusted_interface_show, trusted_interface_store);
+
 
 static struct attribute * attrs [] = {
     &dhcp_attribute.attr,
