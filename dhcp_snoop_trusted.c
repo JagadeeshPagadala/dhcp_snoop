@@ -155,6 +155,9 @@ int dhcp_timer_task(int action)
     /* Iterate through HASH table and update lease time*/
     hash_for_each(dhcp_snoop_table, i, ptr, dhcp_hash_list)
     {
+        /*If type is "0"-----static binding so dont decreament lease time */
+        if(ptr->type == 0)
+            continue;
 	    if(ptr->lease_time < 30)
 	    	ptr->lease_time=0;
 	    else
@@ -212,6 +215,22 @@ char* inet_ntoa(struct in_addr in, char* buf, size_t* rlen)
     }
 
     return buf;
+}
+/**
+ * function to convert xx.yy.zz.ww dotted decimal to uint32
+ */
+unsigned int inet_addr(char *str)
+{
+    int a, b, c, d;
+    char arr[4];
+
+    sscanf(str, "%d.%d.%d.%d", &a, &b, &c, &d);
+    arr[0] = a; 
+    arr[1] = b; 
+    arr[2] = c;
+    arr[3] = d;
+
+    return *(unsigned int*)arr;
 }
 
 /*
@@ -319,6 +338,7 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
                     tmp->ip = dhcp_ip_address(skb);
                     memcpy(tmp->traffic_mac, mh->h_dest, ETH_ALEN);
                     tmp->lease_time = dhcp_lease_time(skb);
+                    tmp->type = 1;
                     //printk(KERN_DEBUG"%s:DHCP spoof entry already present... Updating with new values \n", __func__);
                     return;
                 }
@@ -334,6 +354,7 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
             memcpy(ptr->dhcp_mac, hw, ETH_ALEN);
             memcpy(ptr->traffic_mac, mh->h_dest, ETH_ALEN);
             ptr->lease_time = dhcp_lease_time(skb);
+            ptr->type = 1;
             // key value is last octate of IP address
             uint8_t key;
             uint32_t ip; 
@@ -358,10 +379,15 @@ int verify_packet(struct sk_buff *skb)
 	uint32_t src_ip;
     int i = 0;
 	
-    /*TODO: If HASH table is empty.... don't perform check */
+    /*TODO:
+     * Choose what to do when there is no HASH table is created for DHCP snoop
+     * 1.If HASH table is empty.... don't perform check 
+     * 2.Just drop the packet
+     * */
+
     if (hash_empty(dhcp_snoop_table) == true)
     {
-        return 1;
+        return 0;/* I am not accepting untill a static entry or DHCP snoop entry*/
     }
     else
 	{
@@ -507,8 +533,12 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
     uint32_t vlan;
     char *p;
     char *buffer;
+    struct in_addr addr;
+    struct dhcp_struct *tmp;
+    int i = 0;
 
-    memcpy(buffer, buf, count);
+    //memcpy(buffer, buf, count);
+    buffer = buf;
     //parse MAC address
     p = strsep(&buffer,",");
     if(!mac_pton(p, mac))
@@ -516,14 +546,16 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
         printk(KERN_DEBUG"%s: mac_pton failed", __func__);
         return -EINVAL;
     }
-    printk(KERN_DEBUG"%s:mac addr is:%s ", __func__, p);
-    memcpy(mac, p, ETH_ALEN);
+    printk(KERN_DEBUG"%s :mac addr is:%s ", __func__, p);
     
     //parse IP address
     p = strsep(&buffer,",");
-    memcpy(&ip, p, ETH_ALEN);
-    printk(KERN_DEBUG"%s:IP addr is:%s", __func__, p);
+    //memcpy(&ip, p, ETH_ALEN);
+    printk(KERN_DEBUG"%s :IP addr is:%s", __func__, p);
     /*TODO: add API that converts x.y.z.w to uinit32_t */
+    ip = inet_addr(p);
+
+    printk(KERN_DEBUG"%s : IP addr in uint32 %u",__func__, ip);
     //parse VLAN.... etc 
 
     /*Add to hash table */
@@ -537,12 +569,13 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
         if(memcmp(tmp->dhcp_mac, mac, ETH_ALEN) == 0)
         {
             // If entry is found, replace the entry (or) update entry
-            //TODO: tmp->ip = ;
+            tmp->ip = ip;
             //memcpy(tmp->dhcp_mac, mh->h_dest, ETH_ALEN);
             //tmp->lease_time = dhcp_lease_time(skb);
-            tmp->type = 0
+            tmp->lease_time = 0;
+            tmp->type = 0;
             //printk(KERN_DEBUG"%s:DHCP spoof entry already present... Updating with new values \n", __func__);
-            return;
+            return count;
         }
     }
     // entry is not found, so add to hash table 
@@ -550,15 +583,14 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
     if( ptr == NULL )
     {
         D("%s: can't allocate memory\n",__func__);
-        return;           
+        return count;           
     }
-    //TODO: ptr->ip = dhcp_ip_address(skb);
+    ptr->ip = ip;
     memcpy(ptr->dhcp_mac, mac, ETH_ALEN);
-    tmp->type = 0;// this is a static entry
+    ptr->type = 0;// this is a static entry
+    ptr->lease_time = 0;
     // key value is last octate of IP address
     uint8_t key;
-    uint32_t ip; 
-    ip = dhcp_ip_address(skb);
     key = (uint8_t) ip; /*TODO: find a good way to take last octate */
     hash_add(dhcp_snoop_table, &ptr->dhcp_hash_list, key);
 
@@ -582,6 +614,7 @@ static ssize_t trusted_interface_show(struct kobject *kobj, struct kobj_attribut
         count+=sprintf(buf+count, "%s \t", ptr->name);
         ptr = ptr->next;
     }
+    count+=sprintf(buf+count,"\n"); /* This line is just for good alignment*/
     return count;
 }
 
@@ -907,7 +940,7 @@ static int __init mod_init_func (void)
     nf_register_hook(&packet_nfho);
 
     /***** If dhcp server is not on the box*******/
-    nf_register_hook(&dhcp_incoming_nfho);
+    //nf_register_hook(&dhcp_incoming_nfho);
 
     ex_kobj = kobject_create_and_add("dhcp", kernel_kobj);
     retval = sysfs_create_group(ex_kobj, &attr_group);
