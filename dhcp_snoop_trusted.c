@@ -910,7 +910,8 @@ static struct nf_hook_ops packet_nfho = {
 	.priority	= NF_IP_PRI_FIRST,
 };
 
-/* This hook is to listen on non brige interface, 
+/**
+ * This hook is to listen on non brige interface, 
  * i.e to capture incoming DHCP ack packets from DHCP server */
 static struct nf_hook_ops dhcp_incoming_nfho = {
     .owner      = THIS_MODULE,
@@ -960,6 +961,8 @@ static void __exit mod_exit_func (void)
 
     nf_unregister_hook(&dhcp_nfho);
     nf_unregister_hook(&packet_nfho);
+    //nf_unregister_hook(&dhcp_incoming_nfho);
+
     //TODO: clean the Hash table
     //TODO: clean memory associated with trusted interfaces 
 }
