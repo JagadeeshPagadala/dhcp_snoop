@@ -502,27 +502,66 @@ static ssize_t dhcp_store(struct kobject * kobj, struct kobj_attribute * attr, c
     /**
      * Take input string and parse the string as comma as delimiter
      */
-    ub mac[ETH_ALEN] = {0};
+    unsigned char mac[ETH_ALEN] = {0};
     uint32_t ip;
     uint32_t vlan;
     char *p;
-    char buffer[1024];
+    char *buffer;
 
     memcpy(buffer, buf, count);
     //parse MAC address
-    p = strsep(buffer,",");
+    p = strsep(&buffer,",");
     if(!mac_pton(p, mac))
     {
         printk(KERN_DEBUG"%s: mac_pton failed", __func__);
         return -EINVAL;
     }
+    printk(KERN_DEBUG"%s:mac addr is:%s ", __func__, p);
+    memcpy(mac, p, ETH_ALEN);
     
     //parse IP address
-    p = strsep(buffer)
+    p = strsep(&buffer,",");
+    memcpy(&ip, p, ETH_ALEN);
+    printk(KERN_DEBUG"%s:IP addr is:%s", __func__, p);
+    /*TODO: add API that converts x.y.z.w to uinit32_t */
     //parse VLAN.... etc 
 
-    
-    
+    /*Add to hash table */
+    /* Here both cases..... DHCP server and DHCP Relay agent cases are handled*/
+    //Search in hash table 
+    hash_for_each(dhcp_snoop_table, i, tmp, dhcp_hash_list)
+    {
+        // compare stored MAC address with PACKET mac address
+        // dhcp_mac is client MAC that is snooped from previous DHCP transaction 
+        // hw is CHADDR(client HW addr) field of present DHCP transaction
+        if(memcmp(tmp->dhcp_mac, mac, ETH_ALEN) == 0)
+        {
+            // If entry is found, replace the entry (or) update entry
+            //TODO: tmp->ip = ;
+            //memcpy(tmp->dhcp_mac, mh->h_dest, ETH_ALEN);
+            //tmp->lease_time = dhcp_lease_time(skb);
+            tmp->type = 0
+            //printk(KERN_DEBUG"%s:DHCP spoof entry already present... Updating with new values \n", __func__);
+            return;
+        }
+    }
+    // entry is not found, so add to hash table 
+    struct dhcp_struct *ptr = kmalloc(sizeof( struct dhcp_struct), GFP_KERNEL);
+    if( ptr == NULL )
+    {
+        D("%s: can't allocate memory\n",__func__);
+        return;           
+    }
+    //TODO: ptr->ip = dhcp_ip_address(skb);
+    memcpy(ptr->dhcp_mac, mac, ETH_ALEN);
+    tmp->type = 0;// this is a static entry
+    // key value is last octate of IP address
+    uint8_t key;
+    uint32_t ip; 
+    ip = dhcp_ip_address(skb);
+    key = (uint8_t) ip; /*TODO: find a good way to take last octate */
+    hash_add(dhcp_snoop_table, &ptr->dhcp_hash_list, key);
+
     return count;
 }
 
