@@ -34,7 +34,6 @@ bool is_dhcp_server = 1;
 module_param(is_dhcp_server, bool , S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(is_dhcp_server, "If box is working as DHCP relay agent unset this variable when loading the module, by default it is set\n");
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Ajeet Vijayvergiya");
 MODULE_AUTHOR("Jagadeesh Pagadala");
 MODULE_DESCRIPTION("DHCP snoop and IP spoof");
 
@@ -72,15 +71,11 @@ struct dhcp_struct
 {
     uint32_t ip;
     unsigned char dhcp_mac[6]; /*Client MAC*/
-    unsigned char traffic_mac[6]; /* DHCP relay agent MAC*/ /*TODO: this is not required,, since DHCP snooping/ IP spoofing can be handled on L2 devices*/
     unsigned int lease_time;
     /* For hash table*/
     struct hlist_node dhcp_hash_list;
-    /*TODO: 
-     * 1. add type variable..... to maintain static Binding or DHCP snoop binding
-     * 2. delete traffic mac..... because no need to maintain router MAC.
-     * */
-    uint8_t type; // DHCP snoop...1, Static.....0
+    /* type is to maintain the entry type. 1--> DHCP snoop and 0--> Static entry*/
+    uint8_t type;
 };
 
 /* This structure maintains list of trusted interfaces*/
@@ -133,7 +128,6 @@ int dump_list(char *buf)
         saddr.s_addr = ptr->ip;
         count+=sprintf(buf+count,"IP address  		-	%s\n",inet_ntoa(saddr,buff,NULL));
         count+=sprintf(buf+count,"MAC address (DHCP) 	-	%02x:%02x:%02x:%02x:%02x:%02x\n",ptr->dhcp_mac[0],ptr->dhcp_mac[1],ptr->dhcp_mac[2],ptr->dhcp_mac[3],ptr->dhcp_mac[4],ptr->dhcp_mac[5]);
-        count+=sprintf(buf+count,"MAC address (Traffic)	-	%02x:%02x:%02x:%02x:%02x:%02x\n",ptr->traffic_mac[0],ptr->traffic_mac[1],ptr->traffic_mac[2],ptr->traffic_mac[3],ptr->traffic_mac[4],ptr->traffic_mac[5]);
         count+=sprintf(buf+count,"Lease Time  		-	%d Seconds\n",ptr->lease_time);
         count+=sprintf(buf+count,"\n\n");
     }
@@ -336,7 +330,6 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
                 {
                     // If entry is found, replace the entry (or) update entry
                     tmp->ip = dhcp_ip_address(skb);
-                    memcpy(tmp->traffic_mac, mh->h_dest, ETH_ALEN);
                     tmp->lease_time = dhcp_lease_time(skb);
                     tmp->type = 1;
                     //printk(KERN_DEBUG"%s:DHCP spoof entry already present... Updating with new values \n", __func__);
@@ -352,7 +345,6 @@ void dhcp_process_packet(struct sk_buff *skb, bool is_dhcp_server)
             }
             ptr->ip = dhcp_ip_address(skb);
             memcpy(ptr->dhcp_mac, hw, ETH_ALEN);
-            memcpy(ptr->traffic_mac, mh->h_dest, ETH_ALEN);
             ptr->lease_time = dhcp_lease_time(skb);
             ptr->type = 1;
             // key value is last octate of IP address
@@ -400,7 +392,7 @@ int verify_packet(struct sk_buff *skb)
         hash_for_each(dhcp_snoop_table, i, ptr, dhcp_hash_list)
 		{
 			/* check for MAC address */
-			if((memcmp(&src_mac, &ptr->dhcp_mac, ETH_ALEN) == 0) || (memcmp(&src_mac, &ptr->traffic_mac, ETH_ALEN) == 0))
+			if((memcmp(&src_mac, &ptr->dhcp_mac, ETH_ALEN) == 0))
 			{
                 /* check IP address*/
 				if(src_ip == ptr->ip)
