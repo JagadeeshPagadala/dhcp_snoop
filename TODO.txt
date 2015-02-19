@@ -1,3 +1,14 @@
+18-2-2015:
+0. Add this module in kernel as loadable kernel module.. not as a static since it may be requiered to load/unload module dynamically.
+1. Add VLAN info in DHCP snoop table... And the code that checks for IP spoof should use VLAN information also when it tries to find an entry from the snoop table and makes a comparison with IP.
+
+2. No need to implement learning snoop entry from traffic.
+
+3. To support static env better way, admin can add MAC-IP entries manually.
+
+4. When IP spoof is enabled by admin... then Reverse Path Filtering(RPF) also should be enforced.
+    Take care of this thing when implementing UI.
+
 5-2-2015:
 
 Verify relay case:
