@@ -30,6 +30,10 @@
 #define IPV4 4
 #define HASH_TABLE_BITS 8
 
+#define IS_IP(skb) (skb->protocol == htnos(ETH_P_IP))
+
+#define IS_VLAN(skb) (skb->protocol == htons(ETH_P_8021Q) && (vlan_proto(skb) == htons(ETH_P_IP)))
+
 bool is_dhcp_server = 1;
 module_param(is_dhcp_server, bool , S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(is_dhcp_server, "If box is working as DHCP relay agent unset this variable when loading the module, by default it is set\n");
@@ -766,17 +770,24 @@ unsigned int data_hook_function(unsigned int hooknum, struct sk_buff *skb,
     struct ethhdr *eh;
     struct in_addr saddr;
     struct trusted_interface_list *ptr = trusted_if_head;
+    u16 vlan_tag;
 
+    /* How to check the vlan packet ... ?*/
+    if (vlan_get_tag(skb, &vlan_tag)<0) {
+        printk(KERN_DEBUG"%s: packet is not VLAN tagged ",__func__);
+    }else 
+        printk(KERN_DEBUG"%s: VLAN tag is %d", __func__, vlan_tag);
 
 	/* Check packet is Internet packet or not */
+    /* TODO: add a check to verify VLAN tool*/
     if (skb->protocol != htons (ETH_P_IP))
 	{
 		return NF_ACCEPT;
 	}
-    
+
     /* If packet is IPv6, then just Accept the packet  */
     ip_header = ip_hdr(skb);
-    if(ip_header->version != IPV4)
+    if (ip_header->version != IPV4)
     {
         return NF_ACCEPT;
     }
